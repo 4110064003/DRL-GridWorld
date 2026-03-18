@@ -39,21 +39,9 @@ pip install flask numpy
 
 ## 執行方式
 
-1. 進入 GridWorld 資料夾：
+直接在瀏覽器開啟線上 Demo：
 
-   ```bash
-   cd GridWorld
-   ```
-
-2. 啟動整合後的 Flask 伺服器：
-
-   ```bash
-   python app_final.py
-   ```
-
-3. 在瀏覽器開啟：
-
-   - http://127.0.0.1:5000/
+- https://drl-gridworld-1.onrender.com/
 
 你會看到一個頁面，左邊是 HW1-2：Fixed Policy Evaluation，右邊是 HW1-3：Optimal Path Finding (Value Iteration)。
 
