@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Grid World - Combined Demo</title>
+    <style>
+        :root { --cell-size: 70px; }
+        body {
+            font-family: "Segoe UI", sans-serif;
+            background: #f8f9fa;
+            text-align: center;
+            margin: 0;
+            padding-top: 20px;
+        }
+        .controls {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            display: inline-block;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .sections-row {
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 40px;
+            flex-wrap: wrap;
+        }
+        .section-column {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .section-title {
+            margin-top: 0;
+        }
+        .grid {
+            display: grid;
+            margin: 0 auto;
+            gap: 3px;
+            background: #2c3e50;
+            border: 6px solid #2c3e50;
+            width: max-content;
+            border-radius: 8px;
+        }
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        .coord-num {
+            font-size: 12px;
+            font-weight: bold;
+            color: #bdc3c7;
+            position: absolute;
+            top: 4px;
+            left: 6px;
+        }
+        .start { background-color: #2ecc71 !important; color: white; }
+        .end { background-color: #e74c3c !important; color: white; }
+        .obstacle { background-color: #34495e !important; color: white; }
+        .path { background-color: #f1c40f !important; transition: background 0.3s; }
+        .status-text { font-size: 13px; font-weight: 900; z-index: 5; margin-top: -5px; }
+        .arrow-wrap { width: 28px; height: 28px; display: none; }
+        .arrow-svg path {
+            stroke: #3498db;
+            stroke-width: 2.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+        .start .arrow-svg path, .path .arrow-svg path { stroke: #2c3e50; }
+        .v-val { font-size: 11px; font-weight: 800; margin-top: 2px; color: #2c3e50; }
+        input, button {
+            padding: 10px 15px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            font-weight: bold;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        button:hover { background: #2980b9; }
+        .btn-run { background: #27ae60; }
+        .status-label { font-weight: bold; color: #7f8c8d; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="sections-row">
+        <!-- 左邊：固定策略 Policy Evaluation (HW1-2) -->
+        <div class="section-column">
+            <div class="controls">
+                <h2 class="section-title">HW1-2 Grid World : Fixed Policy Evaluation</h2>
+                Dimension n:
+                <input type="number" id="gridSize_pe" value="5" min="5" max="9" style="width: 50px;">
+                <button onclick="initGridPE()">Reset Grid</button>
+                <button class="btn-run" onclick="solveGridPE()">Evaluate Policy &amp; Animate</button>
+                <p id="status_pe" class="status-label">Loading...</p>
+            </div>
+            <div id="gridContainer_pe" class="grid"></div>
+        </div>
+
+        <!-- 右邊：Value Iteration 最佳路徑搜尋 (HW1-3) -->
+        <div class="section-column">
+            <div class="controls">
+                <h2 class="section-title">HW1-3 Grid World: Optimal Path Finding (Value Iteration)</h2>
+                Dimension n:
+                <input type="number" id="gridSize_vi" value="5" min="5" max="9" style="width: 50px;">
+                <button onclick="initGridVI()">Reset Grid</button>
+                <button class="btn-run" onclick="solveGridVI()">Find Path &amp; Animate</button>
+                <p id="status_vi" class="status-label">Loading...</p>
+            </div>
+            <div id="gridContainer_vi" class="grid"></div>
+        </div>
+    </div>
+
+    <script>
+        // 共同使用的箭頭 SVG 與旋轉設定
+        const arrowSvg = `<svg class="arrow-svg" viewBox="0 0 24 24"><path d="M12 19V5M12 5L5 12M12 5L19 12"/></svg>`;
+        const rotations = { '↑': 0, '↓': 180, '←': -90, '→': 90 };
+
+        /*********************
+         * Value Iteration 區塊
+         *********************/
+        let n_vi, start_vi = null, end_vi = null, obstacles_vi = [];
+        let currentPolicyVI = [];
+
+        function initGridVI() {
+            n_vi = parseInt(document.getElementById('gridSize_vi').value);
+            start_vi = null;
+            end_vi = null;
+            obstacles_vi = [];
+            currentPolicyVI = [];
+
+            const container = document.getElementById('gridContainer_vi');
+            container.style.gridTemplateColumns = `repeat(${n_vi}, var(--cell-size))`;
+            container.innerHTML = '';
+
+            for (let r = 0; r < n_vi; r++) {
+                for (let c = 0; c < n_vi; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `cell-vi-${r}-${c}`;
+                    const num = r * n_vi + c + 1;
+                    cell.innerHTML = `
+                        <span class="coord-num">${num}</span>
+                        <div class="arrow-wrap">${arrowSvg}</div>
+                        <span class="v-val" id="v-vi-${r}-${c}"></span>
+                    `;
+                    cell.onclick = () => handleCellClickVI(r, c);
+                    container.appendChild(cell);
+                }
+            }
+            document.getElementById('status_vi').innerText = 'Click any cell to set START';
+        }
+
+        function handleCellClickVI(r, c) {
+            const cell = document.getElementById(`cell-vi-${r}-${c}`);
+            const statusEl = document.getElementById('status_vi');
+
+            if (!start_vi) {
+                start_vi = [r, c];
+                cell.classList.add('start');
+                const span = document.createElement('span');
+                span.className = 'status-text';
+                span.innerText = 'START';
+                cell.appendChild(span);
+                statusEl.innerText = 'Click any cell to set END';
+            } else if (!end_vi && (r !== start_vi[0] || c !== start_vi[1])) {
+                end_vi = [r, c];
+                cell.classList.add('end');
+                const span = document.createElement('span');
+                span.className = 'status-text';
+                span.innerText = 'END';
+                cell.appendChild(span);
+                document.getElementById(`v-vi-${r}-${c}`).innerText = 'G';
+                statusEl.innerText = `Select ${n_vi - 2} cells for OBSTACLES (Remaining: ${n_vi - 2})`;
+            } else if (obstacles_vi.length < n_vi - 2 && !cell.classList.contains('start') && !cell.classList.contains('end')) {
+                if (!cell.classList.contains('obstacle')) {
+                    obstacles_vi.push([r, c]);
+                    cell.classList.add('obstacle');
+                    cell.querySelector('.arrow-wrap').innerHTML = '<b style="font-size:18px">X</b>';
+                    let rem = (n_vi - 2) - obstacles_vi.length;
+                    statusEl.innerText = rem > 0
+                        ? `Select ${n_vi - 2} OBSTACLES (Remaining: ${rem})`
+                        : "Ready! Click 'Find Path & Animate'";
+                }
+            }
+        }
+
+        async function solveGridVI() {
+            if (!start_vi || !end_vi || obstacles_vi.length < n_vi - 2) {
+                alert('Please finish settings first!');
+                return;
+            }
+
+            const res = await fetch('/calculate_value_iteration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ n: n_vi, start: start_vi, end: end_vi, obstacles: obstacles_vi })
+            });
+            const data = await res.json();
+            currentPolicyVI = data.policy;
+
+            for (let r = 0; r < n_vi; r++) {
+                for (let c = 0; c < n_vi; c++) {
+                    const cell = document.getElementById(`cell-vi-${r}-${c}`);
+                    cell.classList.remove('path');
+                    const wrap = cell.querySelector('.arrow-wrap');
+                    const svg = cell.querySelector('.arrow-svg');
+                    const vEl = document.getElementById(`v-vi-${r}-${c}`);
+
+                    if (!cell.classList.contains('obstacle') && !cell.classList.contains('end')) {
+                        if (svg) svg.style.display = 'block';
+                        wrap.style.display = 'block';
+                        const dir = data.policy[r][c];
+                        if (dir && dir !== 'G' && dir !== 'X') {
+                            wrap.style.transform = `rotate(${rotations[dir]}deg)`;
+                        }
+                        vEl.innerText = data.v_matrix[r][c].toFixed(2);
+                    }
+                }
+            }
+            animateVI();
+        }
+
+        function animateVI() {
+            let curr = [...start_vi];
+            let steps = 0;
+            const moves = { '↑': [-1, 0], '↓': [1, 0], '←': [0, -1], '→': [0, 1] };
+
+            function step() {
+                if (steps > n_vi * n_vi) return;
+                const [r, c] = curr;
+                const cell = document.getElementById(`cell-vi-${r}-${c}`);
+                if (!cell.classList.contains('start') && !cell.classList.contains('end'))
+                    cell.classList.add('path');
+                if (r === end_vi[0] && c === end_vi[1]) {
+                    document.getElementById('status_vi').innerText = 'Target Reached!';
+                    return;
+                }
+                const dir = currentPolicyVI[r][c];
+                curr = [r + moves[dir][0], c + moves[dir][1]];
+                steps++;
+                setTimeout(step, 200);
+            }
+            step();
+        }
+
+        /*********************
+         * Policy Evaluation 區塊
+         *********************/
+        let n_pe, start_pe = null, end_pe = null, obstacles_pe = [];
+        let fixedPolicy = [];
+
+        function initGridPE() {
+            n_pe = parseInt(document.getElementById('gridSize_pe').value);
+            start_pe = null;
+            end_pe = null;
+            obstacles_pe = [];
+            fixedPolicy = [];
+
+            const container = document.getElementById('gridContainer_pe');
+            container.style.gridTemplateColumns = `repeat(${n_pe}, var(--cell-size))`;
+            container.innerHTML = '';
+
+            const arrows = ['↑', '↓', '←', '→'];
+
+            for (let r = 0; r < n_pe; r++) {
+                fixedPolicy[r] = [];
+                for (let c = 0; c < n_pe; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `cell-pe-${r}-${c}`;
+
+                    const randArrow = arrows[Math.floor(Math.random() * 4)];
+                    fixedPolicy[r][c] = randArrow;
+
+                    cell.innerHTML = `
+                        <span class="coord-num">${r * n_pe + c + 1}</span>
+                        <div class="arrow-wrap" style="transform: rotate(${rotations[randArrow]}deg)">${arrowSvg}</div>
+                        <span class="v-val" id="v-pe-${r}-${c}"></span>
+                    `;
+                    cell.onclick = () => handleCellClickPE(r, c);
+                    container.appendChild(cell);
+                }
+            }
+            document.getElementById('status_pe').innerText = 'Click any cell to set START';
+        }
+
+        function handleCellClickPE(r, c) {
+            const cell = document.getElementById(`cell-pe-${r}-${c}`);
+            const statusEl = document.getElementById('status_pe');
+
+            if (!start_pe) {
+                start_pe = [r, c];
+                cell.classList.add('start');
+                cell.insertAdjacentHTML('beforeend', '<span class="status-text">START</span>');
+                statusEl.innerText = 'Click any cell to set END';
+            } else if (!end_pe && (r !== start_pe[0] || c !== start_pe[1])) {
+                end_pe = [r, c];
+                cell.classList.add('end');
+                cell.insertAdjacentHTML('beforeend', '<span class="status-text">END</span>');
+                document.getElementById(`v-pe-${r}-${c}`).innerText = 'G';
+                statusEl.innerText = `Select ${n_pe - 2} cells for OBSTACLES (Remaining: ${n_pe - 2})`;
+            } else if (obstacles_pe.length < n_pe - 2 && !cell.classList.contains('start') && !cell.classList.contains('end') && !cell.classList.contains('obstacle')) {
+                obstacles_pe.push([r, c]);
+                cell.classList.add('obstacle');
+                cell.querySelector('.arrow-wrap').innerHTML = '<b style="font-size:18px">X</b>';
+                let rem = (n_pe - 2) - obstacles_pe.length;
+                statusEl.innerText = rem > 0
+                    ? `Select OBSTACLES (Remaining: ${rem})`
+                    : "Ready! Click 'Evaluate Policy & Animate'";
+            }
+        }
+
+        async function solveGridPE() {
+            if (!start_pe || !end_pe || obstacles_pe.length < n_pe - 2) {
+                alert('Please finish settings first!');
+                return;
+            }
+            document.getElementById('status_pe').innerText = 'Calculating Bellman Equation...';
+
+            const res = await fetch('/calculate_policy_evaluation', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ n: n_pe, start: start_pe, end: end_pe, obstacles: obstacles_pe, policy: fixedPolicy })
+            });
+            const data = await res.json();
+
+            for (let r = 0; r < n_pe; r++) {
+                for (let c = 0; c < n_pe; c++) {
+                    const cell = document.getElementById(`cell-pe-${r}-${c}`);
+                    cell.classList.remove('path');
+                    const vEl = document.getElementById(`v-pe-${r}-${c}`);
+                    const wrap = cell.querySelector('.arrow-wrap');
+                    if (!cell.classList.contains('obstacle') && !cell.classList.contains('end')) {
+                        wrap.style.display = 'block';
+                        vEl.innerText = data.v_matrix[r][c].toFixed(2);
+                    }
+                }
+            }
+            animatePE();
+        }
+
+        function animatePE() {
+            let curr = [...start_pe];
+            let steps = 0;
+            const moves = { '↑': [-1, 0], '↓': [1, 0], '←': [0, -1], '→': [0, 1] };
+
+            function step() {
+                if (steps > n_pe * n_pe) return;
+                const [r, c] = curr;
+                const cell = document.getElementById(`cell-pe-${r}-${c}`);
+                if (!cell.classList.contains('start') && !cell.classList.contains('end')) cell.classList.add('path');
+                if (r === end_pe[0] && c === end_pe[1]) {
+                    document.getElementById('status_pe').innerText = 'Target Reached!';
+                    return;
+                }
+                const dir = fixedPolicy[r][c];
+                let nr = r + moves[dir][0], nc = c + moves[dir][1];
+                const isObs = obstacles_pe.some(o => o[0] === nr && o[1] === nc);
+                if (nr < 0 || nr >= n_pe || nc < 0 || nc >= n_pe || isObs) {
+                    document.getElementById('status_pe').innerText = 'Path blocked by policy!';
+                    return;
+                }
+                curr = [nr, nc];
+                steps++;
+                setTimeout(step, 200);
+            }
+            step();
+        }
+
+        // 初始載入兩個區塊
+        window.onload = function () {
+            initGridVI();
+            initGridPE();
+        };
+    </script>
+</body>
+</html>

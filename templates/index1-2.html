@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Grid World - Fixed Policy Evaluation</title>
+    <style>
+        :root { --cell-size: 70px; }
+        body { font-family: "Segoe UI", sans-serif; background: #f8f9fa; text-align: center; margin: 0; padding-top: 20px; }
+        .controls { background: white; padding: 25px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .grid { display: grid; margin: 0 auto; gap: 3px; background: #2c3e50; border: 6px solid #2c3e50; width: max-content; border-radius: 8px; }
+        .cell { width: var(--cell-size); height: var(--cell-size); background: white; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; }
+        .coord-num { font-size: 12px; font-weight: bold; color: #bdc3c7; position: absolute; top: 4px; left: 6px; }
+        .start { background-color: #2ecc71 !important; color: white; }
+        .end { background-color: #e74c3c !important; color: white; }
+        .obstacle { background-color: #34495e !important; color: white; }
+        .path { background-color: #f1c40f !important; transition: background 0.3s; }
+        .status-text { font-size: 13px; font-weight: 900; z-index: 5; margin-top: -5px; color: white; }
+        .arrow-wrap { width: 28px; height: 28px; display: none; }
+        .arrow-svg path { stroke: #3498db; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+        .v-val { font-size: 11px; font-weight: 800; margin-top: 2px; color: #2c3e50; }
+        button { padding: 10px 15px; border-radius: 6px; border: 1px solid #ddd; font-weight: bold; cursor: pointer; margin: 0 5px; }
+        .btn-run { background: #27ae60; color: white; border: none; }
+        #status { font-weight: bold; color: #7f8c8d; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h2>Grid World: Fixed Policy Evaluation</h2>
+        Dimension n: <input type="number" id="gridSize" value="5" min="5" max="9" style="width: 50px;">
+        <button onclick="initGrid()">Reset Grid</button>
+        <button class="btn-run" onclick="solveGrid()">Evaluate Policy & Animate</button>
+        <p id="status">Loading...</p>
+    </div>
+    <div id="gridContainer" class="grid"></div>
+
+    <script>
+        let n, start = null, end = null, obstacles = [];
+        let fixedPolicy = [];
+        const arrowSvg = `<svg class="arrow-svg" viewBox="0 0 24 24"><path d="M12 19V5M12 5L5 12M12 5L19 12"/></svg>`;
+
+        function initGrid() {
+            n = parseInt(document.getElementById('gridSize').value);
+            start = null; end = null; obstacles = []; fixedPolicy = [];
+            const container = document.getElementById('gridContainer');
+            container.style.gridTemplateColumns = `repeat(${n}, var(--cell-size))`;
+            container.innerHTML = '';
+
+            const arrows = ['↑', '↓', '←', '→'];
+            const rotations = {'↑': 0, '↓': 180, '←': -90, '→': 90};
+
+            for (let r = 0; r < n; r++) {
+                fixedPolicy[r] = [];
+                for (let c = 0; c < n; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.id = `cell-${r}-${c}`;
+                    
+                    const randArrow = arrows[Math.floor(Math.random() * 4)];
+                    fixedPolicy[r][c] = randArrow;
+                    
+                    cell.innerHTML = `
+                        <span class="coord-num">${r * n + c + 1}</span>
+                        <div class="arrow-wrap" style="transform: rotate(${rotations[randArrow]}deg)">${arrowSvg}</div>
+                        <span class="v-val" id="v-${r}-${c}"></span>
+                    `;
+                    cell.onclick = () => handleCellClick(r, c);
+                    container.appendChild(cell);
+                }
+            }
+            document.getElementById('status').innerText = "Click any cell to set START";
+        }
+
+        function handleCellClick(r, c) {
+            const cell = document.getElementById(`cell-${r}-${c}`);
+            const statusEl = document.getElementById('status');
+            if (!start) {
+                start = [r, c]; cell.classList.add('start');
+                cell.insertAdjacentHTML('beforeend', '<span class="status-text">START</span>');
+                statusEl.innerText = "Click any cell to set END";
+            } else if (!end && (r !== start[0] || c !== start[1])) {
+                end = [r, c]; cell.classList.add('end');
+                cell.insertAdjacentHTML('beforeend', '<span class="status-text">END</span>');
+                document.getElementById(`v-${r}-${c}`).innerText = "G";
+                statusEl.innerText = `Select ${n-2} cells for OBSTACLES (Remaining: ${n-2})`;
+            } else if (obstacles.length < n - 2 && !cell.classList.contains('start') && !cell.classList.contains('end') && !cell.classList.contains('obstacle')) {
+                obstacles.push([r, c]);
+                cell.classList.add('obstacle');
+                cell.querySelector('.arrow-wrap').innerHTML = '<b style="font-size:18px">X</b>';
+                let rem = (n - 2) - obstacles.length;
+                statusEl.innerText = rem > 0 ? `Select OBSTACLES (Remaining: ${rem})` : "Ready! Click 'Evaluate Policy & Animate'";
+            }
+        }
+
+        async function solveGrid() {
+            if (!start || !end || obstacles.length < n-2) return alert("Please finish settings first!");
+            document.getElementById('status').innerText = "Calculating Bellman Equation...";
+
+            const res = await fetch('/calculate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ n, start, end, obstacles, policy: fixedPolicy })
+            });
+            const data = await res.json();
+
+            for (let r = 0; r < n; r++) {
+                for (let c = 0; c < n; c++) {
+                    const cell = document.getElementById(`cell-${r}-${c}`);
+                    cell.classList.remove('path');
+                    const vEl = document.getElementById(`v-${r}-${c}`);
+                    const wrap = cell.querySelector('.arrow-wrap');
+                    if (!cell.classList.contains('obstacle') && !cell.classList.contains('end')) {
+                        wrap.style.display = 'block';
+                        vEl.innerText = data.v_matrix[r][c].toFixed(2);
+                    }
+                }
+            }
+            animate();
+        }
+
+        function animate() {
+            let curr = [...start];
+            let steps = 0;
+            const moves = {'↑': [-1,0], '↓': [1,0], '←': [0,-1], '→': [0,1]};
+
+            function step() {
+                if (steps > n * n) return;
+                const [r, c] = curr;
+                const cell = document.getElementById(`cell-${r}-${c}`);
+                if (!cell.classList.contains('start') && !cell.classList.contains('end')) cell.classList.add('path');
+                if (r === end[0] && c === end[1]) {
+                    document.getElementById('status').innerText = "Target Reached!"; return;
+                }
+                const dir = fixedPolicy[r][c];
+                let nr = r + moves[dir][0], nc = c + moves[dir][1];
+                // Animation follows fixed policy but stops if it hits a wall/obstacle
+                const isObs = obstacles.some(o => o[0] === nr && o[1] === nc);
+                if (nr < 0 || nr >= n || nc < 0 || nc >= n || isObs) {
+                    document.getElementById('status').innerText = "Path blocked by policy!"; return;
+                }
+                curr = [nr, nc]; steps++;
+                setTimeout(step, 200);
+            }
+            step();
+        }
+        window.onload = initGrid;
+    </script>
+</body>
+</html>
